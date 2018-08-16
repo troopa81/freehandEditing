@@ -178,21 +178,40 @@ class FreehandEditing:
             else:
                 return
 
+        # build context for default value expression
+        context = QgsExpressionContext()
+        context.appendScope(QgsExpressionContextUtils.globalScope())
+        context.appendScope(QgsExpressionContextUtils.projectScope())
+        context.appendScope(QgsExpressionContextUtils.layerScope(layer))
+
         # add attribute fields to feature
         fields = layer.pendingFields()
         if QGis.QGIS_VERSION_INT >= 10900:  # vector api change update
             f.initAttributes(fields.count())
             for i in range(fields.count()):
-                if provider.defaultValue(i):
-                    f.setAttribute(i, provider.defaultValue(i))
+
+                value = None
+                if QGis.QGIS_VERSION_INT > 21800:
+                    value = layer.defaultValue(i, f, context)
+                elif provider.defaultValue(i):
+                    value = provider.defaultValue(i)
+
+                if value:
+                    f.setAttribute(i, value)
         else:
             for i in fields:
                 f.addAttribute(i, provider.defaultValue(i))
 
+        # compute whether or not we have to display edit form dialog
+        no_edit_dialog = (settings.value(
+            "/qgis/digitizing/disable_enter_attribute_values_dialog",
+            False, type=bool)
+            or (QGis.QGIS_VERSION_INT > 21800
+                and layer.editFormConfig().suppress() ==
+                QgsEditFormConfig.SuppressOn))
+
         layer.beginEditCommand("Feature added")
-        if (settings.value(
-                "/qgis/digitizing/disable_enter_attribute_values_dialog",
-                False, type=bool)):
+        if (no_edit_dialog):
             layer.addFeature(f)
             layer.endEditCommand()
         else:
